@@ -1,0 +1,128 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: rabbitmq-system
+spec:
+  serviceName: rabbitmq-service   # Must be the same as the name of the headless service, used for hostname propagation access pod
+  selector:
+    matchLabels:
+      app: rabbitmq
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+      annotations:
+        scheduler.alpha.kubernetes.io/affinity: >
+            {
+              "podAntiAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": [{
+                  "labelSelector": {
+                    "matchExpressions": [{
+                      "key": "app",
+                      "operator": "In",
+                      "values": ["rabbitmq"]
+                    }]
+                  },
+                  "topologyKey": "kubernetes.io/hostname"
+                }]
+              }
+            }
+    spec:
+      serviceAccountName: rabbitmq-sa
+      terminationGracePeriodSeconds: 10
+      initContainers:                  # By default (in kubernetes), ConfigMap is mounted as read-only file-system, this will remove the constraint
+      - name: configmap-copy
+        image: busybox
+        command: ['/bin/sh', '-c', 'cp /config-volume/* /config/']
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: config-volume
+          mountPath: /config-volume
+      containers:        
+      - name: rabbitmq
+        image: rabbitmq:3.8.2-alpine
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - >
+                if [ -z "$(grep rabbitmq /etc/resolv.conf)" ]; then
+                  sed "s/^search \([^ ]\+\)/search rabbitmq.\1 \1/" /etc/resolv.conf > /etc/resolv.conf.new;
+                  cat /etc/resolv.conf.new > /etc/resolv.conf;
+                  rm /etc/resolv.conf.new;
+                fi;
+                until rabbitmqctl node_health_check; do sleep 1; done;
+                rabbitmqctl set_policy ha-all "." '{"ha-mode":"exactly","ha-params":3,"ha-sync-mode":"automatic"}'
+        env:
+          - name: HOSTNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: RABBITMQ_USE_LONGNAME
+            value: "true"
+          - name: RABBITMQ_NODENAME
+            value: "rabbit@$(HOSTNAME).rabbitmq-service.rabbitmq-system.svc.cluster.local"
+          - name: RABBITMQ_ERLANG_COOKIE
+            valueFrom:
+               secretKeyRef:
+                  name: rabbitmq-secret
+                  key: rabbitmq-erlang-cookie
+          - name: RABBITMQ_DEFAULT_USER
+            valueFrom:
+               secretKeyRef:
+                  name: rabbitmq-secret
+                  key: rabbitmq-default-user
+          - name: RABBITMQ_DEFAULT_PASS
+            valueFrom:
+               secretKeyRef:
+                  name: rabbitmq-secret
+                  key: rabbitmq-default-pass
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 15672
+          - name: amqp
+            protocol: TCP
+            containerPort: 5672
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: 2Gi
+          requests:
+            cpu: "0.3"
+            memory: 2Gi
+        livenessProbe:
+          exec:
+            command: ["rabbitmqctl", "node_health_check"]
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["rabbitmqctl", "node_health_check"]
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/rabbitmq
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: rabbitmq-config
+            items:
+            - key: rabbitmq.conf
+              path: rabbitmq.conf
+            - key: enabled_plugins
+              path: enabled_plugins

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-world
+  namespace: rabbitmq-system
+spec:
+  type: LoadBalancer
+  selector:
+    greeting: hello
+    department: world
+  ports:
+  - protocol: TCP
+    port: 60000
+    targetPort: 50000

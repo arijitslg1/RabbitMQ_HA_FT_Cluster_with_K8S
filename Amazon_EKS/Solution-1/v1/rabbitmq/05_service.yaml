@@ -1,0 +1,40 @@
+---
+# headless service Used to access pods using hostname
+kind: Service
+apiVersion: v1
+metadata:
+  name: rabbitmq-service
+  namespace: rabbitmq-system
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true 
+  ports: 
+   - name: amqp
+     port: 5672
+   - name: http
+     port: 15672
+  selector:
+    app: rabbitmq
+
+---
+# Used to expose the dashboard to the external network
+kind: Service
+apiVersion: v1
+metadata:
+  name: rabbitmq-management-service
+  namespace: rabbitmq-system
+spec:
+  type: LoadBalancer
+  ports:
+   - name: http
+     protocol: TCP
+     port: 15672
+     targetPort: 15672
+     nodePort: 31672
+   - name: amqp
+     protocol: TCP
+     port: 5672
+     targetPort: 5672
+     nodePort: 30672
+  selector:
+    app: rabbitmq
