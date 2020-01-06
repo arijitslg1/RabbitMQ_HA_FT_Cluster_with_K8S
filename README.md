@@ -1,0 +1,1 @@
+# RabbitMQ_HA_FT_Cluster_with_K8S
