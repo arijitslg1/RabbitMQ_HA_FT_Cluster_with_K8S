@@ -24,7 +24,7 @@ metadata:
   name: rabbitmq-management-service
   namespace: rabbitmq-system
 spec:
-  type: LoadBalancer
+  type: NodePort
   ports:
    - name: http
      protocol: TCP
